@@ -226,47 +226,8 @@ import pickle
 from torchprofile import profile_macs
 
 
-class RNG:
-    def __init__(self, bits):
-        self.seed = 0
-        self.bits = bits
-        self.idx = 0
-        self.random_numbers = list(range(-2 ** (bits - 1), 2 ** (bits - 1)))
-        random.shuffle(self.random_numbers)
-
-    def step(self):
-        number = self.random_numbers[self.idx]
-        self.idx = (self.idx + 1) % len(self.random_numbers)
-        return number
-
-
-class RNGs:
-    def __init__(self, bits, num_RNGs):
-        self.bits = bits
-        self.num_RNGs = num_RNGs
-        self.rngs = [RNG(bits) for _ in range(num_RNGs)]
-        self.idx = 0
-        self.reverse_idx = 0
-        self.get_norm()
-
-    def get_norm(self):
-        self.norm = {}
-        for i in range(2 ** self.bits):
-            rns = [rng.step() for rng in self.rngs]
-            self.norm[rns[0]] = sum([rn ** 2 for rn in rns]) ** 0.5
-        self.idx = 0
-
-    def step(self):
-        if self.idx % (2 ** self.bits - 1) == 0 and self.idx != 0:
-            self.rngs.append(self.rngs.pop(0))
-
-        self.idx += 1
-        if (self.idx - 1) % (2 ** self.bits - 1) == 0 and self.idx != 1:
-            self.reverse_idx = -((abs(self.reverse_idx) + 1) % self.num_RNGs)
-
-        return [rng.step() for rng in self.rngs]
-
-class TPGM(nn.Module):
+# DiZO added
+class DiZO(nn.Module):
     def __init__(self, model, norm_mode, exclude_list=[]) -> None:
         super().__init__()
         self.norm_mode = norm_mode
@@ -300,8 +261,7 @@ class TPGM(nn.Module):
             constraint_iterator,
             apply=False,
     ):
-        # apply: A flag for whether in Projection Upate or Projection stage (Sec.3.3)
-        # pre_trained = pre_trained.cuda()
+
         self.include_list = []
         for (name, new_para), anchor_para in zip(
                 new.named_parameters(), pre_trained.parameters()
@@ -319,7 +279,6 @@ class TPGM(nn.Module):
                 self.include_list.append(name)
                 v = (new_para.detach() - anchor_para.detach()) * alpha
                 temp = v + anchor_para.detach()
-                # print(torch.cuda.memory_allocated() // 1024 // 1024)
 
                 if apply:
                     with torch.no_grad():
@@ -328,8 +287,6 @@ class TPGM(nn.Module):
                     new_para.requires_grad = False
                     new_para.copy_(temp)
 
-        # pre_trained = pre_trained.cpu()
-        # self.init = False
 
     def reverse_constraints(self, new, pre_trained):
         for (name, new_para), anchor_para in zip(
@@ -353,9 +310,6 @@ class TPGM(nn.Module):
             norms = torch.norm(t)  # L2 norm
         else:
             norms = torch.sum(torch.abs(t), dim=tuple(range(1, t.dim())), keepdim=True)  # MARS norm
-
-        # if apply:
-        #     self.n[name] = norms.item()
 
         constraint = next(constraint_iterator)
 
@@ -437,9 +391,6 @@ class TPGM(nn.Module):
 
         return CausalLMOutputWithPast(
             loss=loss,
-            # past_key_values=outputs.past_key_values,
-            # hidden_states=outputs.hidden_states,
-            # attentions=outputs.attentions,
         )
 
 
@@ -507,8 +458,6 @@ class TPGM(nn.Module):
                 for i, (name, gamma) in enumerate(self.constraints.named_parameters()):
 
                     tmp_z = zs[name]
-                    # gamma.data = torch.clip(gamma.data - 2 * grad * tmp_z, (1 - tau) * ts[i],
-                    #                         (1 + tau) * ts[i])
                     gamma.data = torch.clip(gamma.data - 2 * ts[i] * grad * tmp_z, (1 - tau) * ts[i], (1 + tau) * ts[i])
 
             self.ts = ts
@@ -640,7 +589,8 @@ class TPGM(nn.Module):
 
             return pgm_loss
 
-class tpgm_trainer():
+# DiZO added
+class dizo_trainer():
     def __init__(
             self,
             base_model,
@@ -654,17 +604,16 @@ class tpgm_trainer():
         self.device = torch.device("cuda")
         self.proj_lr = proj_lr
         self.max_iters = max_iters
-        # self.max_iters = 20
         self.exclude_list = exclude_list
-        self.tpgm = TPGM(base_model, norm_mode=norm_mode, exclude_list=exclude_list).to(base_model.device)
+        self.dizo = DiZO(base_model, norm_mode=norm_mode, exclude_list=exclude_list).to(base_model.device)
         self.pre_trained = base_model
-        self.pgm_optimizer = torch.optim.Adam(self.tpgm.parameters(), lr=self.proj_lr)
+        self.pgm_optimizer = torch.optim.Adam(self.dizo.parameters(), lr=self.proj_lr)
         self.pgmloader = pgmloader
         self.dataset_iterator = iter(self.pgmloader)
         self.criterion = torch.nn.CrossEntropyLoss()
         self.i = 0
 
-    def tpgm_bayesian_search(self, model, base_model, apply=False):
+    def dizo_bayesian_search(self, model, base_model, apply=False):
         if not apply:
 
             try:
@@ -677,15 +626,13 @@ class tpgm_trainer():
                 data[each] = data[each].to(self.device)
             # data = self._prepare_inputs(data)
 
-            self.tpgm.bayesian_optimize(model, base_model, x=data)
+        self.dizo(model, self.pre_trained, apply=True)
 
-        self.tpgm(model, self.pre_trained, apply=True)
-
-    def tpgm_zo_iters(self, model, base_model, apply=False):
+    def dizo_zo_iters(self, model, base_model, apply=False):
         if not apply:
             self.count = 0
-            self.tpgm = self.tpgm.to(self.device)
-            self.tpgm.init = True
+            self.dizo = self.dizo.to(self.device)
+            self.dizo.init = True
             while self.count < self.max_iters:
 
                 try:
@@ -697,18 +644,17 @@ class tpgm_trainer():
                 for each in data:
                     data[each] = data[each].to(self.device)
 
-                self.tpgm.zo_forward(model, base_model, x=data)
-                self.tpgm.init = False
+                self.dizo.zo_forward(model, base_model, x=data)
+                self.dizo.init = False
                 self.count += 1
 
-        self.tpgm.zo_forward(model, self.pre_trained, apply=True)
-        # torch.save(self.tpgm.alpha, 'alpha{}_zo.pth'.format(self.i))
+        self.dizo.zo_forward(model, self.pre_trained, apply=True)
         self.i += 1
 
-    def tpgm_iters(self, model, base_model, apply=False):
+    def dizo_iters(self, model, base_model, apply=False):
         if not apply:
             self.count = 0
-            self.tpgm = self.tpgm.to(self.device)
+            self.dizo = self.dizo.to(self.device)
 
             while self.count < self.max_iters:
 
@@ -722,15 +668,14 @@ class tpgm_trainer():
                     data[each] = data[each].to(self.device)
                 # data = self._prepare_inputs(data)
 
-                pgm_loss = self.tpgm(model, base_model, x=data)
+                pgm_loss = self.dizo(model, base_model, x=data)
                 self.pgm_optimizer.zero_grad()
                 pgm_loss.backward()
                 self.pgm_optimizer.step()
 
                 self.count += 1
 
-        # torch.save(self.tpgm.alpha, 'alpha{}_fo.pth'.format(self.i))
-        self.tpgm(model, self.pre_trained, apply=True)
+        self.dizo(model, self.pre_trained, apply=True)
         self.i += 1
 
 
@@ -1017,29 +962,26 @@ class OurTrainer(Trainer):
             if param.requires_grad:
                 self.named_parameters_to_optim.append((name, param))
 
+        # DiZO added: exclude the layers do not need projection
         if self.named_parameters_to_optim[0][0] != 'model.decoder.embed_tokens.weight':
             self.exclude_list = [each for each in list(self.model.state_dict().keys()) if 'lora' not in each]
         else:
-            # self.exclude_list = ['model.decoder.embed_tokens.weight'] + [name for name, _ in
-            #                                                              self.named_parameters_to_optim if
-            #                                                              'self_attn' not in name or 'norm' in name or 'bias' in name]
             self.exclude_list = ['model.decoder.embed_tokens.weight'] + [name for name, _ in
                                                                          self.named_parameters_to_optim if
                                                                          'self_attn.v_proj.weight' not in name and 'self_attn.k_proj.weight' not in name]
             self.named_parameters_to_optim = self.named_parameters_to_optim[1:]
 
-
+        # DiZO added: remove the unnecessary parameters to cpu for memory saving
         if args.enhanced in ['zo', 'fo']:
             self.base_model = copy.deepcopy(self.model)
             for name, param in self.base_model.named_parameters():
                 if name in self.exclude_list:
                     param.data = param.data.to('cpu')
-            self.tpgm_trainer = tpgm_trainer(self.base_model, train_dataloader, 'l2norm', 0.1, 10, self.exclude_list)
+            self.dizo_trainer = dizo_trainer(self.base_model, train_dataloader, 'l2norm', 0.1, 10, self.exclude_list)
 
         else:
             args.enhanced = None
 
-        # 'l2norm'
         self.loss_list = []
         self.random_vector = {}
 
@@ -1075,14 +1017,8 @@ class OurTrainer(Trainer):
             if epoch == epochs_trained and resume_from_checkpoint is not None and steps_trained_in_current_epoch == 0:
                 self._load_rng_state(resume_from_checkpoint)
 
-            step = -1
-
-            # state_dict = self.model.state_dict()
-            # self.state_dict_cpu = {each: state_dict[each].detach().cpu() for each in state_dict.keys()}
 
             for step, inputs in enumerate(epoch_iterator):
-
-                # a = state_dict['model.decoder.layers.23.self_attn.q_proj.weight'].detach().cpu().numpy()
 
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
@@ -1140,7 +1076,6 @@ class OurTrainer(Trainer):
                         and (step + 1) == steps_in_epoch
                 ):
                     # MeZO added: update model with the estimated gradient
-
                     if args.trainer == "zo":
                         self.zo_update(args, model)
                     else:
@@ -1190,13 +1125,9 @@ class OurTrainer(Trainer):
                         else:
                             self.optimizer.step()
 
-                        # import code
-                        # code.interact(local=locals())
                         if optimizer_was_run and not self.deepspeed:
                             self.lr_scheduler.step()
                         model.zero_grad()
-                        # import code
-                        # code.interact(local=locals())
 
                     self.state.global_step += 1
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
@@ -1326,70 +1257,6 @@ class OurTrainer(Trainer):
             param.data = param.data + scaling_factor * z * self.args.zo_eps
             if self.zo_random_seed is not None:
                 self.random_vector[name] = z
-
-    # def zo_perturb_parameters(self, random_vector=None, scaling_factor=1, random_vector_tmp=None, idx=None,
-    #                           num_RNGs=None, i=None):
-    #     if random_vector is None:
-    #         random_vector = {}
-    #
-    #     bits = self.args.bits
-    #     if self.args.pre_gen and random_vector_tmp is not None:
-    #         size = random_vector_tmp.shape[0]
-    #     else:
-    #         size = num_RNGs
-    #
-    #     for name, param in self.named_parameters_to_optim:
-    #
-    #         if name in random_vector:
-    #             z = random_vector[name]
-    #         else:
-    #             if self.args.pre_gen:
-    #
-    #
-    #                 idx1 = idx + param.data.numel()
-    #                 turn = math.ceil((idx1 + idx) / random_vector_tmp.shape[0])
-    #
-    #                 tmp = random_vector_tmp.repeat(turn)
-    #                 z = tmp[idx:idx1].reshape(param.data.size())
-    #                 idx = idx1 % size
-    #
-    #
-    #                 # theoretical_norm = self.theoretical_norm[param.data.numel()]
-    #                 # norm = torch.norm(z)
-    #                 #
-    #                 # z = (theoretical_norm / norm) * z
-    #
-    #             else:
-    #                 # z = torch.tensor([each.step() for each in self.rngs], device=param.data.device, dtype=torch.float32)
-    #                 z = torch.tensor(self.rngs.step(), device=param.data.device, dtype=torch.float32)
-    #                 # z = torch.randint(-2 ** (bits - 1), 2 ** (bits - 1), (size,), device=param.data.device,
-    #                 #                   dtype=torch.float32)
-    #                 theoretical_norm = np.exp(
-    #                     0.5 * np.log(2) + loggamma((z.numel() + 1) / 2) - loggamma(z.numel() / 2))
-    #
-    #                 norm = self.rngs.norm[z[self.rngs.reverse_idx].item()]
-    #                 # norm = 26413.0
-    #
-    #                 if norm != 0:
-    #                     z = self.scale_decay(i, theoretical_norm / norm) * z
-    #                 else:
-    #                     z = torch.zeros(z.shape, device=param.data.device, dtype=param.data.dtype)
-    #
-    #                 turn = math.ceil(param.data.numel() / z.shape[0])
-    #
-    #                 z = z.repeat(turn)
-    #                 z = z[:param.data.numel()].reshape(param.data.size())
-    #
-    #                 # theoretical_norm = self.theoretical_norm[param.data.numel()]
-    #                 # norm = torch.norm(z)
-    #
-    #                 z = z.to(param.dtype)
-    #             random_vector[name] = z
-    #
-    #
-    #         param.data = param.data + scaling_factor * z * self.args.zo_eps
-    #
-    #     return random_vector, idx
 
     @staticmethod
     def forward_wrap_with_option_len(self, input_ids=None, labels=None, option_len=None, num_options=None,
@@ -1555,11 +1422,12 @@ class OurTrainer(Trainer):
             z = torch.normal(mean=0, std=1, size=param.data.size(), device=param.data.device, dtype=param.data.dtype)
             param.data = param.data - self._get_learning_rate() * (self.projected_grad * z)
 
+        # DiZO added
         if (self.state.global_step + 1) % 50 == 0 and args.enhanced:
             if args.enhanced == 'zo':
-                self.tpgm_trainer.tpgm_zo_iters(model, base_model=self.base_model)
+                self.dizo_trainer.dizo_zo_iters(model, base_model=self.base_model)
             else:
-                self.tpgm_trainer.tpgm_iters(model, base_model=self.base_model)
+                self.dizo_trainer.dizo_iters(model, base_model=self.base_model)
 
         self.lr_scheduler.step()
 

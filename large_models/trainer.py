@@ -912,6 +912,9 @@ class OurTrainer(Trainer):
         self.callback_handler.model = self.model
         self.callback_handler.optimizer = self.optimizer
         self.callback_handler.lr_scheduler = self.lr_scheduler
+        if args.trainer == 'zo':
+            lr_lambda = lambda step: 1 - self.state.global_step / (2 * args.max_steps)
+            self.lr_scheduler = LambdaLR(self.optimizer, lr_lambda)
         self.callback_handler.train_dataloader = train_dataloader
         if self.hp_name is not None and self._trial is not None:
             # use self._trial because the SigOpt/Optuna hpo only call `_hp_search_setup(trial)` instead of passing trial
@@ -985,9 +988,6 @@ class OurTrainer(Trainer):
         self.loss_list = []
         self.random_vector = {}
 
-        if args.trainer == 'zo':
-            lr_lambda = lambda step: 1 - self.state.global_step / (2 * args.max_steps)
-            self.lr_scheduler = LambdaLR(self.optimizer, lr_lambda)
         self.accuracy = []
 
         for epoch in range(epochs_trained, num_train_epochs):

@@ -1,6 +1,6 @@
 Implementation of the divergence-driven zeroth-order optimization ([PDF](https://arxiv.org/pdf/2502.03304)).
 
-You can reproduce the results in the paper by running. There are still some bugs when applying First-order for projection ($\gamma$) searching, which may cause the memory to keep increasing during training.
+You can reproduce the results in the paper by running. There are still some bugs when applying First-order for projection ($\gamma$) searching, which may cause the memory to keep increasing during training, and we will fix it as soon as possible.
 ```bash
 # do not involve $\gamma$
 MODEL=facebook/opt-2.7b TASK=SST2 MODE=ft LR=1e-6 EPS=1e-3 STEPS=4000 bash mezo.sh

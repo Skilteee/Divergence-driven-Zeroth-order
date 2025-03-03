@@ -10,8 +10,6 @@ MODEL=facebook/opt-2.7b TASK=SST2 MODE=ft LR=1e-6 EPS=1e-3 STEPS=4000 ENHANCED=z
 MODEL=facebook/opt-2.7b TASK=SST2 MODE=ft LR=1e-6 EPS=1e-3 STEPS=4000 ENHANCED=fo bash mezo.sh
 ```
 
-You can search for the keyword `DiZO` to find the parts related to divergence-driven (mainly in `trainer.py`).
-
-Some tips for training:
+Some tips in training:
 * `ZO` is sensitive to hyperparameter settings (including seeds).
 * For `DiZO`, in easier datasets (e.g. SST-2), you can apply more aggressive projection, i.e., larger projection scalar or more frequent projection learning, and vice versa.

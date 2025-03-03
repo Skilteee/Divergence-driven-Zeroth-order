@@ -10,6 +10,10 @@ MODEL=facebook/opt-2.7b TASK=SST2 MODE=ft LR=1e-6 EPS=1e-3 STEPS=4000 ENHANCED=z
 MODEL=facebook/opt-2.7b TASK=SST2 MODE=ft LR=1e-6 EPS=1e-3 STEPS=4000 ENHANCED=fo bash mezo.sh
 ```
 
-Some tips in training:
+## Some tips in training:
 * `ZO` is sensitive to hyperparameter settings (including seeds).
 * For `DiZO`, in easier datasets (e.g. SST-2), you can apply more aggressive projection, i.e., larger projection scalar or more frequent projection learning, and vice versa.
+
+## How to add DiZO to my own code?
+
+Our implementation of DiZO is based on [MeZO](https://github.com/princeton-nlp/MeZO). For the adding parts, please refer to `trainer.py` for details (to see where we added, search `DiZO added`).

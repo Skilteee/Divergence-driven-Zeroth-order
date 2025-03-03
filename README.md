@@ -1,4 +1,4 @@
-Implementation of the divergence-driven zeroth-order optimization [Arxiv](https://arxiv.org/abs/2502.03304).
+Implementation of the divergence-driven zeroth-order optimization ([PDF](https://arxiv.org/pdf/2502.03304)).
 
 You can reproduce the results in the paper by running. There are still some bugs when applying First-order for \gamma searching, which may cause the memory to keep increasing during training.
 ```bash

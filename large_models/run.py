@@ -512,18 +512,6 @@ def main():
                 logger.info("===== Train set %d =====" % train_set_seed)
                 logger.info(metrics)
 
-                if args.pre_gen:
-                    f = open('./result/pre_gen/{}-bits-{}_size-{}_{}.txt'.format(args.task_name, args.bits, args.size,
-                                                                                 args.handling), 'w')
-                else:
-                    f = open('./result/no_pre_gen/{}-bits-{}_size-{}_rng-{}_{}.txt'.format(args.task_name, args.bits,
-                                                                                           args.size, args.rng,
-                                                                                           args.handling), 'w')
-
-                f.write('\n')
-                f.write(str('eval_acc = ' + str(metrics['accuracy'])))
-                # if args.local_rank <= 0:
-                #     write_metrics_to_file(metrics, "result/" +  result_file_tag(args) + f"-trainset{train_set_id}.json" if args.result_file is None else args.result_file)
 
     else:
         # For each eval sample, there is a training set. no training is allowed

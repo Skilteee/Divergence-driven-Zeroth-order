@@ -1,3 +1,4 @@
+## DiZO: Towards Fast, Accurate, and Memory-efficient Zeroth-order LLM Fine-tuning 
 Implementation of the divergence-driven zeroth-order optimization ([PDF](https://arxiv.org/pdf/2502.03304)).
 
 There are still some bugs when applying First-order for projection ($\gamma$) searching, which may cause the memory to keep increasing during training, and we will fix it as soon as possible. You can reproduce the results in the paper by running the following.

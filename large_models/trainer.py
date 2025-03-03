@@ -394,7 +394,7 @@ class DiZO(nn.Module):
         )
 
 
-    def perturb_gamma(self, delta, ts=None, zs=None):
+    def perturb_gamma(self, delta, ts=None, zs=None, tau=None, zo_eps=None):
         if zs is None:
             pre = False
             zs = {}
@@ -404,12 +404,12 @@ class DiZO(nn.Module):
         for i, (name, gamma) in enumerate(self.constraints.named_parameters()):
             if not pre:
                 z = torch.normal(0, 1, size=(1,), device=gamma.device, dtype=gamma.dtype)
-                z = torch.clip(z, -3 * ts[i], 3 * ts[i])
+                z = torch.clip(z, (-tau / zo_eps) * ts[i], (tau / zo_eps) * ts[i])
                 zs[name] = z
             else:
                 z = zs[name]
 
-            gamma.data = gamma.data + delta * z * 0.1
+            gamma.data = gamma.data + delta * z * zo_eps
 
         return zs
 
@@ -439,26 +439,29 @@ class DiZO(nn.Module):
                     for i, (name, gamma) in enumerate(self.constraints.named_parameters()):
                         gamma.data = ts[i]
 
-                zs = self.perturb_gamma(1, ts=ts)
+                tau = 0.2
+                zo_eps = 0.1
+                step_size = 2
+
+                zs = self.perturb_gamma(1, ts=ts, tau=tau, zo_eps=zo_eps)
                 constraint_iterator = iter(self.constraints)
                 self.apply_constraints(new, pre_trained, constraint_iterator)
                 loss1 = self.forward_wrap_with_option_len(new, **x, return_dict=True).loss
                 self.reverse_constraints(new, pre_trained)
 
-                self.perturb_gamma(-2, ts=ts, zs=zs)
+                self.perturb_gamma(-2, ts=ts, zs=zs, tau=tau, zo_eps=zo_eps)
                 constraint_iterator = iter(self.constraints)
                 self.apply_constraints(new, pre_trained, constraint_iterator)
                 loss2 = self.forward_wrap_with_option_len(new, **x, return_dict=True).loss
                 self.reverse_constraints(new, pre_trained)
 
-                self.perturb_gamma(1, ts=ts, zs=zs)
-                grad = (loss1 - loss2) / 0.2
-                tau = 0.2
+                self.perturb_gamma(1, ts=ts, zs=zs, tau=tau, zo_eps=zo_eps)
+                grad = (loss1 - loss2) / (2 * zo_eps)
 
                 for i, (name, gamma) in enumerate(self.constraints.named_parameters()):
 
                     tmp_z = zs[name]
-                    gamma.data = torch.clip(gamma.data - 2 * ts[i] * grad * tmp_z, (1 - tau) * ts[i], (1 + tau) * ts[i])
+                    gamma.data = torch.clip(gamma.data - step_size * ts[i] * grad * tmp_z, (1 - tau) * ts[i], (1 + tau) * ts[i])
 
             self.ts = ts
 

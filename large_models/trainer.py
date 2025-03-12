@@ -222,7 +222,6 @@ from tasks import get_task
 import torch.nn.functional as F
 from metrics import calculate_metric
 from collections import defaultdict
-import pickle
 from torchprofile import profile_macs
 
 
